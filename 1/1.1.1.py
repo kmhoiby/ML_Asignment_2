@@ -75,3 +75,4 @@ plt.figure(figsize=(10, 4))
 sns.heatmap(df.isnull(), cbar=False)
 plt.title("Missing Values")
 plt.show()
+
