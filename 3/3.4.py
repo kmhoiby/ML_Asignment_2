@@ -1,6 +1,12 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.svm import SVC
+
 from sklearn.metrics import (
-    precision_score,
-    recall_score
+    accuracy_score,
+    f1_score
 )
 
 from sklearn.datasets import fetch_openml
@@ -17,11 +23,6 @@ from sklearn.preprocessing import (
     StandardScaler
 )
 
-from sklearn.tree import DecisionTreeClassifier
-
-from sklearn.metrics import (
-    f1_score
-)
 
 # Load dataset
 
@@ -118,106 +119,103 @@ preprocessor = ColumnTransformer([
 X_train_processed = preprocessor.fit_transform(X_train)
 X_val_processed = preprocessor.transform(X_val)
 
+# Subsample training set
 
-# Best model from Q2.4
-unweighted_tree = DecisionTreeClassifier(
-    max_depth=12,
-    min_samples_leaf=5,
-    ccp_alpha=0.0001,
-    random_state=42
+rng = np.random.RandomState(42)
+
+indices = rng.choice(
+    X_train_processed.shape[0],
+    size=3000,
+    replace=False
 )
 
-unweighted_tree.fit(X_train_processed, y_train)
+X_sample = X_train_processed[indices]
+y_sample = y_train.iloc[indices]
 
-y_pred_unweighted = unweighted_tree.predict(
-    X_val_processed
-)
+gamma_values = [
+    0.0001,
+    0.001,
+    0.01,
+    0.1,
+    1,
+    10
+]
 
-# Balanced model
-balanced_tree = DecisionTreeClassifier(
-    max_depth=12,
-    min_samples_leaf=5,
-    ccp_alpha=0.0001,
-    class_weight="balanced",
-    random_state=42
-)
+results = []
 
-balanced_tree.fit(X_train_processed, y_train)
+for gamma in gamma_values:
 
-y_pred_balanced = balanced_tree.predict(
-    X_val_processed
-)
-
-print("\n=== Unweighted Tree ===")
-print(
-    "Precision:",
-    round(
-        precision_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
+    svm = SVC(
+        kernel="rbf",
+        gamma=gamma,
+        random_state=42
     )
+
+    svm.fit(
+        X_sample,
+        y_sample
+    )
+
+    y_pred = svm.predict(
+        X_val_processed
+    )
+
+    accuracy = accuracy_score(
+        y_val,
+        y_pred
+    )
+
+    f1 = f1_score(
+        y_val,
+        y_pred,
+        pos_label=">50K"
+    )
+
+    n_support = svm.n_support_.sum()
+
+    results.append({
+        "Gamma": gamma,
+        "Accuracy": accuracy,
+        "F1": f1,
+        "Support Vectors": n_support
+    })
+
+results_df = pd.DataFrame(results)
+
+print("\n=== RBF SVM Gamma Comparison ===")
+print(results_df.round(4).to_string(index=False))
+
+# Plot
+
+plt.figure(figsize=(8, 6))
+
+plt.plot(
+    results_df["Gamma"],
+    results_df["Accuracy"],
+    marker="o",
+    label="Accuracy"
 )
 
-print(
-    "Recall:",
-    round(
-        recall_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
-    )
+plt.plot(
+    results_df["Gamma"],
+    results_df["F1"],
+    marker="s",
+    label="F1 Score"
 )
 
-print(
-    "F1:",
-    round(
-        f1_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
+plt.xscale("log")
 
-print("\n=== Balanced Tree ===")
-print(
-    "Precision:",
-    round(
-        precision_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
+plt.xlabel("Gamma")
+plt.ylabel("Score")
+plt.title("RBF SVM Performance vs Gamma")
+plt.legend()
 
-print(
-    "Recall:",
-    round(
-        recall_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
+plt.show()
 
-print(
-    "F1:",
-    round(
-        f1_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
+# Best gamma
+best_gamma = results_df.loc[
+    results_df["F1"].idxmax()
+]
+
+print("\n=== Best Gamma ===")
+print(best_gamma)

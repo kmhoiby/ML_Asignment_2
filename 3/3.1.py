@@ -1,6 +1,16 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.svm import SVC
+
+from sklearn.model_selection import (
+    StratifiedKFold
+)
+
 from sklearn.metrics import (
-    precision_score,
-    recall_score
+    accuracy_score,
+    roc_curve,
+    auc
 )
 
 from sklearn.datasets import fetch_openml
@@ -15,12 +25,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import (
     OneHotEncoder,
     StandardScaler
-)
-
-from sklearn.tree import DecisionTreeClassifier
-
-from sklearn.metrics import (
-    f1_score
 )
 
 # Load dataset
@@ -118,106 +122,107 @@ preprocessor = ColumnTransformer([
 X_train_processed = preprocessor.fit_transform(X_train)
 X_val_processed = preprocessor.transform(X_val)
 
+# Subsample training set
 
-# Best model from Q2.4
-unweighted_tree = DecisionTreeClassifier(
-    max_depth=12,
-    min_samples_leaf=5,
-    ccp_alpha=0.0001,
+rng = np.random.RandomState(42)
+
+indices = rng.choice(
+    X_train_processed.shape[0],
+    size=10000,
+    replace=False
+)
+
+X_sample = X_train_processed[indices]
+y_sample = y_train.iloc[indices]
+
+# Linear SVM
+
+svm = SVC(
+    kernel="linear",
+    probability=True,
     random_state=42
 )
 
-unweighted_tree.fit(X_train_processed, y_train)
+# 5-fold CV
 
-y_pred_unweighted = unweighted_tree.predict(
-    X_val_processed
-)
-
-# Balanced model
-balanced_tree = DecisionTreeClassifier(
-    max_depth=12,
-    min_samples_leaf=5,
-    ccp_alpha=0.0001,
-    class_weight="balanced",
+cv = StratifiedKFold(
+    n_splits=5,
+    shuffle=True,
     random_state=42
 )
 
-balanced_tree.fit(X_train_processed, y_train)
+accuracies = []
 
-y_pred_balanced = balanced_tree.predict(
-    X_val_processed
+plt.figure(figsize=(8, 6))
+
+for fold, (train_idx, test_idx) in enumerate(
+    cv.split(X_sample, y_sample),
+    start=1
+):
+
+    X_fold_train = X_sample[train_idx]
+    X_fold_test = X_sample[test_idx]
+
+    y_fold_train = y_sample.iloc[train_idx]
+    y_fold_test = y_sample.iloc[test_idx]
+
+    svm.fit(
+        X_fold_train,
+        y_fold_train
+    )
+
+    y_pred = svm.predict(
+        X_fold_test
+    )
+
+    acc = accuracy_score(
+        y_fold_test,
+        y_pred
+    )
+
+    accuracies.append(acc)
+
+    y_prob = svm.predict_proba(
+        X_fold_test
+    )[:, 1]
+
+    fpr, tpr, _ = roc_curve(
+        y_fold_test,
+        y_prob,
+        pos_label=">50K"
+    )
+
+    roc_auc = auc(
+        fpr,
+        tpr
+    )
+
+    plt.plot(
+        fpr,
+        tpr,
+        label=f"Fold {fold} (AUC={roc_auc:.3f})"
+    )
+
+# ROC plot
+
+plt.plot(
+    [0, 1],
+    [0, 1],
+    linestyle="--"
 )
 
-print("\n=== Unweighted Tree ===")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("Linear SVM ROC Curves")
+plt.legend()
+plt.show()
+
+# Mean/std accuracy
+
 print(
-    "Precision:",
-    round(
-        precision_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
-    )
+    f"Accuracy Mean: {np.mean(accuracies):.4f}"
 )
 
 print(
-    "Recall:",
-    round(
-        recall_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
-
-print(
-    "F1:",
-    round(
-        f1_score(
-            y_val,
-            y_pred_unweighted,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
-
-print("\n=== Balanced Tree ===")
-print(
-    "Precision:",
-    round(
-        precision_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
-
-print(
-    "Recall:",
-    round(
-        recall_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
-)
-
-print(
-    "F1:",
-    round(
-        f1_score(
-            y_val,
-            y_pred_balanced,
-            pos_label=">50K"
-        ),
-        4
-    )
+    f"Accuracy Std: {np.std(accuracies):.4f}"
 )
